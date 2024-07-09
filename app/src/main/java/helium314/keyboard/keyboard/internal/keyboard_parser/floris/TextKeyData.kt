@@ -122,7 +122,7 @@ sealed interface KeyData : AbstractKeyData {
                 keys.add("!icon/clipboard_normal_key|!code/key_clipboard")
             if (!params.mId.mEmojiKeyEnabled && !params.mId.isNumberLayout)
                 keys.add("!icon/emoji_normal_key|!code/key_emoji")
-            if (!params.mId.mLanguageSwitchKeyEnabled && !params.mId.isNumberLayout && RichInputMethodManager.getInstance().canSwitchLanguage())
+            if (!params.mId.mLanguageSwitchKeyEnabled && !params.mId.isNumberLayout && RichInputMethodManager.canSwitchLanguage())
                 keys.add("!icon/language_switch_key|!code/key_language_switch")
             if (!params.mId.mOneHandedModeEnabled)
                 keys.add("!icon/start_onehanded_mode_key|!code/key_start_onehanded")
@@ -337,7 +337,7 @@ sealed interface KeyData : AbstractKeyData {
     }
 
     override fun compute(params: KeyboardParams): KeyData? {
-        require(groupId <= GROUP_ENTER) { "only groups up to GROUP_ENTER are supported" }
+        require(groupId in 0..GROUP_ENTER) { "only positive groupIds up to GROUP_ENTER are supported" }
         require(label.isNotEmpty() || type == KeyType.PLACEHOLDER || code != KeyCode.UNSPECIFIED) { "non-placeholder key has no code and no label" }
         require(width >= 0f || width == -1f) { "illegal width $width" }
         val newLabel = label.convertFlorisLabel().resolveStringLabel(params)
@@ -488,7 +488,7 @@ sealed interface KeyData : AbstractKeyData {
         KeyLabel.CURRENCY3 -> params.mLocaleKeyboardInfos.currencyKey.second[2]
         KeyLabel.CURRENCY4 -> params.mLocaleKeyboardInfos.currencyKey.second[3]
         KeyLabel.CURRENCY5 -> params.mLocaleKeyboardInfos.currencyKey.second[4]
-        KeyLabel.CTRL, KeyLabel.ALT, KeyLabel.FN, KeyLabel.META -> label.uppercase(Locale.US)
+        KeyLabel.CTRL, KeyLabel.ALT, KeyLabel.FN, KeyLabel.META , KeyLabel.ESCAPE -> label.uppercase(Locale.US)
         KeyLabel.TAB -> "!icon/tab_key|"
         else -> {
             if (label in toolbarKeyStrings.values) {
