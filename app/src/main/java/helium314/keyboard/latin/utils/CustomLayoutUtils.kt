@@ -128,7 +128,7 @@ fun checkKeys(keys: List<List<Key.KeyParams>>): Boolean {
         return false
     }
     if (keys.any { row -> row.any {
-        if ((it.mPopupKeys?.size ?: 0) > 20) {
+        if ((it.mPopupKeys?.size ?: 0) > 29) {
             Log.w(TAG, "too many popup keys on key ${it.mLabel}")
             true
         } else false
