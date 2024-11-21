@@ -317,6 +317,8 @@ class KeyboardParser(private val params: KeyboardParams, private val context: Co
 
     companion object {
         private const val TAG = "KeyboardParser"
+        const val LAYOUT_TRANSFORMATION = "transform"
+
     }
 
 }
@@ -332,3 +334,4 @@ const val LAYOUT_PHONE_SYMBOLS = "phone_symbols"
 const val LAYOUT_NUMBER_ROW = "number_row"
 const val LAYOUT_EMOJI_BOTTOM_ROW = "emoji_bottom_row"
 const val LAYOUT_CLIPBOARD_BOTTOM_ROW = "clip_bottom_row"
+const val LAYOUT_TRANSFORMATION = "transform"
