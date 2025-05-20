@@ -310,6 +310,7 @@ class KeyboardState(private val switchActions: SwitchActions) {
                     RecapitalizeMode.ALL_LOWER -> ShiftMode.UNSHIFT
                     RecapitalizeMode.FIRST_WORD_UPPER -> ShiftMode.MANUAL
                     RecapitalizeMode.ALL_UPPER -> ShiftMode.LOCKED
+					RecapitalizeMode.STYLE -> ShiftMode.UNSHIFT
                 }
             )
             return
