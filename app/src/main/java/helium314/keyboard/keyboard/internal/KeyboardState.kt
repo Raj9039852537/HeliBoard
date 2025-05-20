@@ -305,6 +305,7 @@ class KeyboardState(private val switchActions: SwitchActions) {
         resetToAlpha(autoCapsFlags, recapitalizeMode)
     }
 
+            RecapitalizeMode.STYLE               -> ShiftMode.UNSHIFT
     private fun updateAlphabetShiftState(autoCapsFlags: Int, recapitalizeMode: RecapitalizeMode?) {
         if (mode != Mode.ALPHABET) return
         if (recapitalizeMode != null) {
