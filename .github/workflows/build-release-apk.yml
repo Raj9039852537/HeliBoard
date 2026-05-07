@@ -14,12 +14,19 @@ permissions:
   
 jobs:
   build:
-
+    name: Gradle Build
     runs-on: ubuntu-latest
-
+    outputs:
+      build_timestamp: ${{ steps.staging_build_step.outputs.build_timestamp }}
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_HARDLINK: "true"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_MAXSIZE: "10G"
+      NATIVE_TARGET: "arm64-v8a"
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -36,6 +43,9 @@ jobs:
         env:
           COMMIT_ID: ${{ github.event.head_commit.id }}
         run: |
+          export LOCAL_PROPERTIES="${{ secrets.LOCAL_PROPERTIES }}"
+          export BUILD_TIMESTAMP=$(date +%s)
+          echo "build_timestamp=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
           ./gradlew assembleRelease
         
           APK=$(find app/build/outputs/apk/release/ -name '*-release.apk')
@@ -44,7 +54,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HeliBoard-debug
+          name: HeliBoard-Release
           path: ${{ env.APK }}
 
       - name: Archive reports for failed job
@@ -162,4 +172,4 @@ jobs:
           AI_SUMMARY: ${{ steps.prepare.outputs.ai_summary }}
         run: |
           python -m pip install requests
-          python Tools/scripts/upload2.py
+          python tools/scripts/upload2.py
