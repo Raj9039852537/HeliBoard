@@ -246,7 +246,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             final PointerTracker tracker = sTrackers.get(i);
             tracker.setKeyDetectorInner(keyDetector);
         }
-        sGestureEnabler.setPasswordMode(keyboard.mId.passwordInput());
+        sGestureEnabler.setPasswordMode(keyboard.mId.isPasswordInput());
     }
 
     public static void setReleasedKeyGraphicsToAllKeys() {
@@ -678,7 +678,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         }
         // A gesture should start only from a non-modifier key. Note that the gesture detection is
         // disabled when the key is repeating.
-        mIsDetectingGesture = (mKeyboard != null) && mKeyboard.mId.isAlphabetKeyboard()
+        mIsDetectingGesture = (mKeyboard != null) && mKeyboard.mId.getElement().isAlphabet()
                 && key != null && !key.isModifier() && !mKeySwipeAllowed && !sInKeySwipe;
         if (mIsDetectingGesture) {
             mBatchInputArbiter.addDownEventPoint(x, y, eventTime,
@@ -932,7 +932,9 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         final int fastTypingTimeout = 2 * sv.mKeyLongpressTimeout / 3;
         // we don't want keyswipes to start immediately if the user is fast-typing,
         // see https://github.com/openboard-team/openboard/issues/411
-        if (SystemClock.elapsedRealtime() < mStartTime + fastTypingTimeout && sTypingTimeRecorder.isInFastTyping(eventTime))
+        // delete swipe is excluded because it already has a distance threshold,
+        // see https://github.com/openboard-team/openboard/pull/566
+        if (code != KeyCode.DELETE && SystemClock.elapsedRealtime() < mStartTime + fastTypingTimeout && sTypingTimeRecorder.isInFastTyping(eventTime))
             return;
         if (code == Constants.CODE_SPACE) {
             int dX = x - mStartX;
@@ -1070,9 +1072,15 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
 
         if (isShowingPopupKeysPanel()) {
             if (!mIsTrackingForActionDisabled) {
-                final int translatedX = mPopupKeysPanel.translateX(x);
-                final int translatedY = mPopupKeysPanel.translateY(y);
-                mPopupKeysPanel.onUpEvent(translatedX, translatedY, mPointerId, eventTime);
+                // For KeyCode.TOGGLE_FLOATING_KEYBOARD, mPopupKeysPanel.onUpEvent will trigger a cancel MoveEvent, which will result
+                // in PointerTrackerQueue.releaseAllPointersOlderThan, which calls onUpEventInternal, thus dispatching the key twice.
+                // To prevent the duplicate input, we set mPopupKeysPanel null before calling onUpEvent, so isShowingPopupKeysPanel returns false
+                PopupKeysPanel panel = mPopupKeysPanel;
+                mPopupKeysPanel = null;
+                int translatedX = panel.translateX(x);
+                int translatedY = panel.translateY(y);
+                panel.onUpEvent(translatedX, translatedY, mPointerId, eventTime);
+                panel.dismissPopupKeysPanel();
             }
             dismissPopupKeysPanel();
             if (isInSlidingKeyInput)
@@ -1155,7 +1163,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                 || (code == Constants.CODE_SPACE && key.getPopupKeys() == null && Settings.getValues().mSpaceForLangChange)
         ) {
             // Long pressing the space key invokes IME switcher dialog.
-            if (sListener.onCustomRequest(Constants.CUSTOM_CODE_SHOW_INPUT_METHOD_PICKER)) {
+            if (sListener.onCustomRequest(KeyboardActionListener.CustomAction.SHOW_INPUT_METHOD_PICKER)) {
                 cancelKeyTracking();
                 sListener.onReleaseKey(code, false);
                 return;

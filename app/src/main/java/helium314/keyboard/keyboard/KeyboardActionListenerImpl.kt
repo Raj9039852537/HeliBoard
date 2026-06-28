@@ -6,6 +6,8 @@ import android.util.SparseArray
 import android.view.KeyEvent
 import android.view.inputmethod.InputMethodSubtype
 import androidx.core.util.forEach
+import androidx.core.view.inputmethod.EditorInfoCompat
+import androidx.core.view.inputmethod.InputContentInfoCompat
 import helium314.keyboard.event.Event
 import helium314.keyboard.event.HangulEventDecoder
 import helium314.keyboard.event.HapticEvent
@@ -18,16 +20,16 @@ import helium314.keyboard.latin.LatinIME
 import helium314.keyboard.latin.RichInputMethodManager
 import helium314.keyboard.latin.common.Constants
 import helium314.keyboard.latin.common.InputPointers
-import helium314.keyboard.latin.common.StringUtils
 import helium314.keyboard.latin.common.combiningRange
-import helium314.keyboard.latin.common.loopOverCodePoints
-import helium314.keyboard.latin.common.loopOverCodePointsBackwards
+import helium314.keyboard.latin.common.moveStepsToCharCount
 import helium314.keyboard.latin.define.ProductionFlags
 import helium314.keyboard.latin.inputlogic.InputLogic
 import helium314.keyboard.latin.settings.Settings
+import helium314.keyboard.latin.utils.GestureDataGatheringSettings
+import helium314.keyboard.latin.utils.BackgroundGatheringCache
 import helium314.keyboard.latin.utils.SubtypeSettings
+import helium314.keyboard.latin.utils.prefs
 import kotlin.math.abs
-import kotlin.math.min
 
 class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inputLogic: InputLogic) : KeyboardActionListener {
 
@@ -79,7 +81,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
         val event: Event
         if (settings.current.mLocale.language == "ko") { // todo: this does not appear to be the right place
-            val subtype = keyboardSwitcher.keyboard?.mId?.mSubtype ?: RichInputMethodManager.getInstance().currentSubtype
+            val subtype = keyboardSwitcher.keyboard?.mId?.subtype ?: RichInputMethodManager.getInstance().currentSubtype
             event = HangulEventDecoder.decodeHardwareKeyEvent(subtype, keyEvent) {
                 getHardwareKeyEventDecoder(keyEvent.deviceId).decodeHardwareKey(keyEvent)
             }
@@ -90,7 +92,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         if (event.isHandled) {
             inputLogic.onCodeInput(
                 settings.current, event,
-                keyboardSwitcher.getKeyboardShiftMode(), // TODO: this is not necessarily correct for a hardware keyboard right now
+                keyboardSwitcher.getKeyboardCapsMode(), // TODO: this is not necessarily correct for a hardware keyboard right now
                 keyboardSwitcher.getCurrentKeyboardScript(),
                 latinIME.mHandler
             )
@@ -102,8 +104,34 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     override fun onCodeInput(primaryCode: Int, x: Int, y: Int, isKeyRepeat: Boolean) {
         when (primaryCode) {
             KeyCode.TOGGLE_AUTOCORRECT -> return settings.toggleAutoCorrect()
-            KeyCode.TOGGLE_INCOGNITO_MODE -> return settings.toggleAlwaysIncognitoMode()
+            KeyCode.TOGGLE_INCOGNITO_MODE -> {
+                settings.toggleAlwaysIncognitoMode()
+                BackgroundGatheringCache.clear()
+                latinIME.setGestureDataGatheringMode(latinIME.currentInputEditorInfo, false)
+                return
+            }
+            KeyCode.BACKGROUND_GATHERING -> {
+                if (BackgroundGatheringCache.isEmpty) {
+                    // only enable, no toggle
+                    GestureDataGatheringSettings.setBackgroundGatheringEnabled(latinIME.prefs(), true)
+                    latinIME.setGestureDataGatheringMode(latinIME.currentInputEditorInfo, false)
+                } else {
+                    if (GestureDataGatheringSettings.isDiscardByDefault(latinIME))
+                        BackgroundGatheringCache.save(latinIME)
+                    else
+                        BackgroundGatheringCache.clear()
+                }
+                return
+            }
+            KeyCode.BACKGROUND_GATHERING_TEMP_OFF -> {
+                GestureDataGatheringSettings.tempDisableBackgroundGathering(latinIME.prefs())
+                BackgroundGatheringCache.clear()
+                latinIME.setGestureDataGatheringMode(latinIME.currentInputEditorInfo, false)
+                return
+            }
         }
+        if (Settings.getValues().mIsLocked && KeyCode.isIsBlockedWhenLocked(primaryCode))
+            return
         val mkv = keyboardSwitcher.mainKeyboardView
 
         // checking if the character is a combining accent
@@ -124,6 +152,16 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
     override fun onTextInput(text: String?) = latinIME.onTextInput(text)
 
+    override fun onContent(content: InputContentInfoCompat) {
+        val editorInfo = latinIME.currentInputEditorInfo
+        val editorMimeTypes = EditorInfoCompat.getContentMimeTypes(editorInfo)
+        if (editorMimeTypes.any { content.description.hasMimeType(it) }) {
+            connection.commitContent(content, editorInfo)
+        } else if (editorMimeTypes.isEmpty()) { // make the fallback optional?
+            latinIME.clipboardHistoryManager.pasteWithoutChangingClips(content)
+        }
+    }
+
     override fun onStartBatchInput() = latinIME.onStartBatchInput()
 
     override fun onUpdateBatchInput(batchPointers: InputPointers?) = latinIME.onUpdateBatchInput(batchPointers)
@@ -138,19 +176,20 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     override fun onFinishSlidingInput() =
         keyboardSwitcher.onFinishSlidingInput(latinIME.currentAutoCapsState, latinIME.currentRecapitalizeState)
 
-    override fun onCustomRequest(requestCode: Int): Boolean {
-        if (requestCode == Constants.CUSTOM_CODE_SHOW_INPUT_METHOD_PICKER) {
-            return latinIME.showInputPickerDialog()
-        }
-        if (requestCode == Constants.CODE_TOUCHPAD_ON) {
+    override fun onCustomRequest(request: KeyboardActionListener.CustomAction) = when (request) {
+        KeyboardActionListener.CustomAction.SHOW_INPUT_METHOD_PICKER -> latinIME.showInputPickerDialog()
+        KeyboardActionListener.CustomAction.TOUCHPAD_ON -> {
             keyboardSwitcher.mainKeyboardView?.alpha = 0.5f
-            return true
+            true
         }
-        if (requestCode == Constants.CODE_TOUCHPAD_OFF) {
-            keyboardSwitcher.mainKeyboardView?.alpha = 1.0f
-            return true
+        KeyboardActionListener.CustomAction.TOUCHPAD_OFF -> {
+            keyboardSwitcher.mainKeyboardView?.alpha = 1f
+            true
         }
-        return false
+        KeyboardActionListener.CustomAction.PERFORM_HAPTIC -> {
+            performHapticFeedback(HapticEvent.KEY_LONG_PRESS)
+            true
+        }
     }
 
     override fun onHorizontalSpaceSwipe(steps: Int): Boolean = when (Settings.getValues().mSpaceSwipeHorizontal) {
@@ -205,22 +244,9 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     }
 
     private fun actualSteps(steps: Int): Int {
-        var actualSteps = 0
-        // corrected steps to avoid splitting chars belonging to the same codepoint
-        if (steps > 0) {
-            val text = connection.getSelectedText(0) ?: return steps
-            loopOverCodePoints(text) { cp, charCount ->
-                actualSteps += charCount
-                actualSteps >= steps
-            }
-        } else {
-            val text = connection.getTextBeforeCursor(-steps * 4, 0) ?: return steps
-            loopOverCodePointsBackwards(text) { cp, charCount ->
-                actualSteps -= charCount
-                actualSteps <= steps
-            }
-        }
-        return actualSteps
+        val text = if (steps > 0) connection.getSelectedText(0) ?: return steps
+        else connection.getTextBeforeCursor(-steps * 4, 0) ?: return steps
+        return moveStepsToCharCount(text, steps)
     }
 
     override fun onUpWithDeletePointerActive() {
@@ -282,7 +308,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         val moveSteps: Int
         if (steps < 0) {
             val text = connection.getTextBeforeCursor(-steps * 4, 0) ?: return false
-            moveSteps = negativeMoveSteps(text, steps)
+            moveSteps = moveStepsToCharCount(text, steps)
             if (moveSteps == 0) {
                 // some apps don't return any text via input connection, and the cursor can't be moved
                 // we fall back to virtually pressing the left/right key one or more times instead
@@ -298,7 +324,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
             gestureMoveBackHaptics()
         } else {
             val text = connection.getTextAfterCursor(steps * 4, 0) ?: return false
-            moveSteps = positiveMoveSteps(text, steps)
+            moveSteps = moveStepsToCharCount(text, steps)
             if (moveSteps == 0) {
                 // some apps don't return any text via input connection, and the cursor can't be moved
                 // we fall back to virtually pressing the left/right key one or more times instead
@@ -336,34 +362,6 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         connection.setSelection(newPosition, newPosition)
         inputLogic.restartSuggestionsOnWordTouchedByCursor(settings.current, keyboardSwitcher.currentKeyboardScript)
         return true
-    }
-
-    private fun positiveMoveSteps(text: CharSequence, steps: Int): Int {
-        var actualSteps = 0
-        // corrected steps to avoid splitting chars belonging to the same codepoint
-        loopOverCodePoints(text) { cp, charCount ->
-            // For emojis we (incorrectly) return 0 so the move is handled by virtual arrow key presses.
-            // This is a simple workaround to avoid determining the correct character count, which can
-            // be tricky because in some cases older Android versions show two emojis where newer ones show one.
-            if (StringUtils.mightBeEmoji(cp)) return 0
-            actualSteps += charCount
-            actualSteps >= steps
-        }
-        return min(actualSteps, text.length)
-    }
-
-    private fun negativeMoveSteps(text: CharSequence, steps: Int): Int {
-        var actualSteps = 0
-        // corrected steps to avoid splitting chars belonging to the same codepoint
-        loopOverCodePointsBackwards(text) { cp, charCount ->
-            // For emojis we (incorrectly) return 0 so the move is handled by virtual arrow key presses.
-            // This is a simple workaround to avoid determining the correct character count, which can
-            // be tricky because in some cases older Android versions show two emojis where newer ones show one.
-            if (StringUtils.mightBeEmoji(cp)) return 0
-            actualSteps -= charCount
-            actualSteps <= steps
-        }
-        return -min(-actualSteps, text.length)
     }
 
     private fun gestureMoveBackHaptics() {

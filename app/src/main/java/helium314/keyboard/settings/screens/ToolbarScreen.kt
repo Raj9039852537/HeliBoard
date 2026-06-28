@@ -16,6 +16,7 @@ import helium314.keyboard.keyboard.KeyboardSwitcher
 import helium314.keyboard.latin.R
 import helium314.keyboard.latin.settings.Defaults
 import helium314.keyboard.latin.settings.Settings
+import helium314.keyboard.latin.utils.GestureDataGatheringSettings.filterBackgroundGatheringToolbarKeys
 import helium314.keyboard.latin.utils.Log
 import helium314.keyboard.latin.utils.ToolbarMode
 import helium314.keyboard.latin.utils.getActivity
@@ -61,6 +62,7 @@ fun ToolbarScreen(
         if (toolbarMode == ToolbarMode.EXPANDABLE) Settings.PREF_QUICK_PIN_TOOLBAR_KEYS else null,
         if (toolbarMode == ToolbarMode.EXPANDABLE) Settings.PREF_AUTO_SHOW_TOOLBAR else null,
         if (toolbarMode == ToolbarMode.EXPANDABLE) Settings.PREF_AUTO_HIDE_TOOLBAR else null,
+        if (toolbarMode != ToolbarMode.HIDDEN) Settings.PREF_SHOW_ONLY_TOOLBAR_WITH_HARDWARE_KEYBOARD else null,
         if (toolbarMode != ToolbarMode.HIDDEN) Settings.PREF_VARIABLE_TOOLBAR_DIRECTION else null,
     )
     SearchSettingsScreen(
@@ -92,13 +94,16 @@ fun createToolbarSettings(context: Context) = listOf(
         SwitchPreference(it, Defaults.PREF_TOOLBAR_SWIPE_DOWN_TO_HIDE)
     },
     Setting(context, Settings.PREF_TOOLBAR_KEYS, R.string.toolbar_keys) {
-        ReorderSwitchPreference(it, Defaults.PREF_TOOLBAR_KEYS)
+        val keys = Defaults.PREF_TOOLBAR_KEYS.filterBackgroundGatheringToolbarKeys(LocalContext.current.prefs())
+        ReorderSwitchPreference(it, keys)
     },
     Setting(context, Settings.PREF_PINNED_TOOLBAR_KEYS, R.string.pinned_toolbar_keys) {
-        ReorderSwitchPreference(it, Defaults.PREF_PINNED_TOOLBAR_KEYS)
+        val keys = Defaults.PREF_PINNED_TOOLBAR_KEYS.filterBackgroundGatheringToolbarKeys(LocalContext.current.prefs())
+        ReorderSwitchPreference(it, keys)
     },
     Setting(context, Settings.PREF_CLIPBOARD_TOOLBAR_KEYS, R.string.clipboard_toolbar_keys) {
-        ReorderSwitchPreference(it, Defaults.PREF_CLIPBOARD_TOOLBAR_KEYS)
+        val keys = Defaults.PREF_CLIPBOARD_TOOLBAR_KEYS.filterBackgroundGatheringToolbarKeys(LocalContext.current.prefs())
+        ReorderSwitchPreference(it, keys)
     },
     Setting(context, Settings.PREF_TOOLBAR_CUSTOM_KEY_CODES, R.string.customize_toolbar_key_codes) {
         var showDialog by rememberSaveable { mutableStateOf(false) }
@@ -124,6 +129,13 @@ fun createToolbarSettings(context: Context) = listOf(
     Setting(context, Settings.PREF_AUTO_HIDE_TOOLBAR, R.string.auto_hide_toolbar, R.string.auto_hide_toolbar_summary)
     {
         SwitchPreference(it, Defaults.PREF_AUTO_HIDE_TOOLBAR)
+    },
+    Setting(context, Settings.PREF_SHOW_ONLY_TOOLBAR_WITH_HARDWARE_KEYBOARD,
+        R.string.toolbar_only_with_hw_keyboard, R.string.toolbar_only_with_hw_keyboard_summary)
+    {
+        SwitchPreference(it, Defaults.PREF_SHOW_ONLY_TOOLBAR_WITH_HARDWARE_KEYBOARD) {
+            KeyboardSwitcher.getInstance().setThemeNeedsReload() // necessary for updating insets
+        }
     },
     Setting(context, Settings.PREF_VARIABLE_TOOLBAR_DIRECTION,
         R.string.var_toolbar_direction, R.string.var_toolbar_direction_summary)
